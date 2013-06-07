@@ -47,6 +47,7 @@ import org.waveprotocol.box.server.robots.RobotRegistrationServlet;
 import org.waveprotocol.box.server.robots.active.ActiveApiServlet;
 import org.waveprotocol.box.server.robots.agent.passwd.PasswordAdminRobot;
 import org.waveprotocol.box.server.robots.agent.passwd.PasswordRobot;
+import org.waveprotocol.box.server.robots.agent.maillist.MaillistRobot;
 import org.waveprotocol.box.server.robots.agent.registration.RegistrationRobot;
 import org.waveprotocol.box.server.robots.agent.welcome.WelcomeRobot;
 import org.waveprotocol.box.server.robots.dataapi.DataApiOAuthServlet;
@@ -271,6 +272,7 @@ public class ServerMain {
   }
 
   private static void initializeRobotAgents(Injector injector, ServerRpcProvider server) {
+    server.addServlet(MaillistRobot.ROBOT_URI + "/*", MaillistRobot.class);
     server.addServlet(PasswordRobot.ROBOT_URI + "/*", PasswordRobot.class);
     server.addServlet(PasswordAdminRobot.ROBOT_URI + "/*", PasswordAdminRobot.class);
     server.addServlet(WelcomeRobot.ROBOT_URI + "/*", WelcomeRobot.class);

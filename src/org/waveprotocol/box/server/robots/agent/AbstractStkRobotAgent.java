@@ -5,18 +5,56 @@ import com.google.inject.Injector;
 import com.google.inject.Key;
 import com.google.inject.name.Names;
 import com.google.wave.api.Blip;
+import com.google.wave.api.BlipContentRefs;
+import com.google.wave.api.event.AnnotatedTextChangedEvent;
+import com.google.wave.api.event.BlipContributorsChangedEvent;
+import com.google.wave.api.event.BlipSubmittedEvent;
 import com.google.wave.api.event.DocumentChangedEvent;
+import com.google.wave.api.event.Event;
+import com.google.wave.api.event.EventHandler;
+import com.google.wave.api.event.EventType;
+import com.google.wave.api.event.FormButtonClickedEvent;
+import com.google.wave.api.event.GadgetStateChangedEvent;
+import com.google.wave.api.event.OperationErrorEvent;
+import com.google.wave.api.event.WaveletBlipCreatedEvent;
+import com.google.wave.api.event.WaveletBlipRemovedEvent;
+import com.google.wave.api.event.WaveletCreatedEvent;
+import com.google.wave.api.event.WaveletFetchedEvent;
+import com.google.wave.api.event.WaveletParticipantsChangedEvent;
 import com.google.wave.api.event.WaveletSelfAddedEvent;
+import com.google.wave.api.event.WaveletSelfRemovedEvent;
+import com.google.wave.api.event.WaveletTagsChangedEvent;
+import com.google.wave.api.event.WaveletTitleChangedEvent;
 import org.waveprotocol.box.server.CoreSettings;
 import org.waveprotocol.box.server.persistence.AccountStore;
 import org.waveprotocol.box.server.robots.register.RobotRegistrar;
 import org.waveprotocol.box.server.robots.register.RobotRegistrarImpl;
 import org.waveprotocol.wave.model.id.TokenGenerator;
+import org.apache.commons.lang.StringUtils;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.lang.Thread;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.util.Iterator;
+
+import java.util.Properties;
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.AddressException;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
 
 @SuppressWarnings("serial")
 public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
 
   public static final String ROBOT_URI = AGENT_PREFIX_URI + "/maillist/user";
+  private static final Logger LOG = Logger.getLogger(AbstractStkRobotAgent.class.getName());
 
   public AbstractStkRobotAgent(Injector injector) {
     this(injector.getInstance(Key.get(String.class, Names.named(CoreSettings.WAVE_SERVER_DOMAIN))),
@@ -24,6 +62,7 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
             .getInstance(ServerFrontendAddressHolder.class), injector
             .getInstance(AccountStore.class), injector.getInstance(RobotRegistrarImpl.class),
         injector.getInstance(Key.get(Boolean.class, Names.named(CoreSettings.ENABLE_SSL))));
+      LOG.log(Level.INFO, "Bot created: " + getRobotId());
   }
 
   AbstractStkRobotAgent(String waveDomain, TokenGenerator tokenGenerator,
@@ -31,20 +70,230 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
       RobotRegistrar robotRegistrar, Boolean sslEnabled) {
     super(waveDomain, tokenGenerator, frontendAddressHolder, accountStore, robotRegistrar, sslEnabled);
   }
+  private String sendEmail(String subject, String body, String parentMsgId) throws Exception
+  {
+      try
+      {
+          System.out.println(">>>>> Sending email with subj: " + subject);
+          Properties props = System.getProperties();
+          props.put("mail.smtp.host", "smtp.example.com");
+          props.put("mail.smtp.port", "587");
+          props.put("mail.smtp.auth", "true");
+          props.put("mail.smtp.starttls.enable", "true");
 
+          Session session = Session.getDefaultInstance(props, null);
+          MimeMessage msg = new MimeMessage(session);
+          if (parentMsgId != null)
+          {
+              msg.addHeader("In-Reply-To", parentMsgId);
+              msg.addHeader("References", parentMsgId);
+          }
+          msg.addRecipient(Message.RecipientType.TO, new InternetAddress("to_address@example.com"));
+          msg.setSubject(subject);
+          msg.setContent(body, "text/html");
+
+          Transport transport = session.getTransport("smtp");
+          transport.connect("smtp.example.com", "mailbot@example.com", "s3cr3t_p4ssw0rd");
+          transport.sendMessage(msg, msg.getAllRecipients());
+          transport.close();
+          return msg.getMessageID();
+      } catch( Exception e ) {
+          System.out.println("Sending an email:" + e);
+          throw new Exception("Could not send email.");
+      }
+  }
+
+    public Map<String, String> query2map(String query)
+    {
+        String[] params = query.split("&");
+        Map<String, String> map = new HashMap<String, String>();
+        for (String param : params)
+        {
+            if (param.split("=").length > 1)
+            {
+                String name = param.split("=")[0];
+                String value = param.split("=")[1];
+                map.put(name, value);
+            }
+        }
+        return map;
+    }
+    private String getQuery(String contents)
+    {
+        String result = "";
+        Pattern pattern = Pattern.compile("\\[maillist-bot\\?([^]]*)\\]");
+        Matcher m = pattern.matcher(contents);
+        if (m.find()) {
+            result = m.group(1);
+        }
+        return result;
+    }
+    private void setQuery(Blip blip, String query)
+    {
+        String contents = blip.getContent();
+        String newQuery = "[maillist-bot?" + query              + "]";
+
+        if (getQuery(contents).equals(""))
+        {
+            BlipContentRefs ref = blip.at(0);
+            ref.insert(newQuery + "\n");
+        }
+        else
+        {
+            String oldQuery = "[maillist-bot?" + getQuery(contents) + "]";
+            replaceInBlip(blip, oldQuery, newQuery);
+        }
+    }
+    private String map2query(Map<String, String> map)
+    {
+        String result = "";
+        Iterator it = map.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry pairs = (Map.Entry)it.next();
+            String pair = pairs.getKey() + "=" + pairs.getValue();
+            it.remove();
+            if (result != "") result += "&";
+            result += pair;
+        }
+        return result;
+    }
+
+  private String blip2title(Blip blip)
+  {
+      Blip rootBlip = getRootBlip(blip);
+      String contents = rootBlip.getContent();
+      String oldQuery = "[maillist-bot?" + getQuery(contents) + "]";
+      contents = contents.replace(oldQuery, "");
+      return contents.trim().split("\n")[0];
+  }
+  private String blip2body(Blip blip)
+  {
+      String contents = blip.getContent();
+      String oldQuery = "[maillist-bot?" + getQuery(contents) + "]";
+      contents = contents.replace(oldQuery, "");
+      return contents.trim().replace("\n", "<br/>");
+  }
+  private Blip getRootBlip(Blip blip)
+  {
+      return blip.getWavelet().getRootBlip();
+  }
+  private String getPrevMsgid(Blip blip)
+  {
+      if (blip.isRoot()) return null;
+      String msgid = query2map(getQuery(blip.getContent())).get("msgid");
+      if (msgid != null) return msgid;
+      Blip parent = blip.getParentBlip();
+      if (parent == null) return msgid;
+      msgid = query2map(getQuery(parent.getContent())).get("msgid");
+      return msgid;
+  }
+  private void modifiedBlip(Blip blip)
+  {
+    try
+    {
+        if (!replaceInBlip(blip, "bot:send\n", "")) return;
+
+        String subject = blip2title(blip);
+        String body = null;
+        String prevMsgid = getPrevMsgid(blip);
+        if (prevMsgid == null) body = newBody(blip);
+        else body = modifiedBody(blip);
+
+        Map<String, String> params = query2map(getQuery(blip.getContent()));
+        String msgid = sendEmail(subject, body, prevMsgid);
+        params.put("msgid", msgid);
+        setQuery(blip, map2query(params));
+    }
+    catch (Exception e)
+    {
+        appendLine(blip, "[maillist-bot error " + e + "]");
+        LOG.log(Level.SEVERE, "Shit happens: " + Thread.currentThread().getStackTrace()[1].getMethodName(), e);
+    }
+  }
+  private boolean replaceInBlip(Blip blip, String from, String to)
+  {
+      // return false if from is not found
+      // return true if from is found
+      // replace only happens if from and to are different
+      int pos = blip.getContent().indexOf(from);
+      if (pos == -1) return false;
+      if (from.equals(to)) return true;
+      BlipContentRefs first = blip.range(pos, pos+from.length());
+      first.replace(to);
+      return true;
+  }
+  private String modifiedBody(Blip blip)
+  {
+      String waveUri = "wave://" + blip.getWaveId().serialise() + "~/conv+root/" + blip.getBlipId();
+      return "<font size='1' color='#aa8639'>"
+           + "someone modified an existing blip: "
+           + "<a href='" + waveUri + "'>" + waveUri + "</a>"
+           + "</font><hr/>"
+           + blip2body(blip);
+  }
+  private String newBody(Blip blip)
+  {
+      String waveUri = "wave://" + blip.getWaveId().serialise() + "~/conv+root/" + blip.getBlipId();
+      return "<font size='1' color='#789e35'>"
+           + blip.getCreator() + " added a new blip: "
+           + "<a href='" + waveUri + "'>" + waveUri + "</a>"
+           + "</font><hr/>"
+           + blip2body(blip);
+  }
   @Override
   public void onWaveletSelfAdded(WaveletSelfAddedEvent event) {
-    Blip blip = event.getBlip();
-    String robotAddress = event.getWavelet().getRobotAddress();
-    appendLine(blip, "Added Maillist-bot to this wave: " + blip.getContent());
+    LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName());
   }
 
   @Override
-  public void onDocumentChanged(DocumentChangedEvent event) {
-    Blip blip = event.getBlip();
-    String modifiedBy = event.getModifiedBy();
-    appendLine(blip, "Adding a new line to the blip after: " + blip.getContent());
+  public void onAnnotatedTextChanged(AnnotatedTextChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName());
+      modifiedBlip(event.getBlip());
   }
+  @Override
+  public void onBlipContributorsChanged(BlipContributorsChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onBlipSubmitted(BlipSubmittedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onDocumentChanged(DocumentChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName());
+      //modifiedBlip(event.getBlip());
+  }
+  @Override
+  public void onFormButtonClicked(FormButtonClickedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onGadgetStateChanged(GadgetStateChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletBlipCreated(WaveletBlipCreatedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletBlipRemoved(WaveletBlipRemovedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletCreated(WaveletCreatedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletFetched(WaveletFetchedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletParticipantsChanged(WaveletParticipantsChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletSelfRemoved(WaveletSelfRemovedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletTagsChanged(WaveletTagsChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onWaveletTitleChanged(WaveletTitleChangedEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+  @Override
+  public void onOperationError(OperationErrorEvent event) {
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
 
   @Override
   protected String getRobotProfilePageUrl() {
