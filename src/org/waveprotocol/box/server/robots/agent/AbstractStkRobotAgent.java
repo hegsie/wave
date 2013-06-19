@@ -196,6 +196,30 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
       if (parent == null) return null;
       return query2map(getQuery(parent.getContent())).get("msgid");
   }
+  private void removedBlip(Blip blip)
+  {
+    try
+    {
+        String subject = blip2title(blip);
+        String body = null;
+
+        String msgid = getMsgid(blip);
+        if (msgid != null)
+        {
+            // cur already has msgid: blip was removed
+            body = modifiedBody(blip);
+        }
+
+        Map<String, String> params = query2map(getQuery(blip.getContent()));
+        String newMsgid = sendEmail(subject, body, msgid);
+        params.put("msgid", newMsgid);
+        setQuery(blip, map2query(params));
+    }
+    catch (Exception e)
+    {
+        LOG.log(Level.SEVERE, "Shit happens: " + Thread.currentThread().getStackTrace()[1].getMethodName(), e);
+    }
+  }
   private void modifiedBlip(Blip blip)
   {
     try
@@ -243,6 +267,22 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
       BlipContentRefs first = blip.range(pos, pos+from.length());
       first.replace(to);
       return true;
+  }
+  private String remvoedBody(Blip blip)
+  {
+      String waveUri = "wave://" + blip.getWaveId().serialise() + "~/conv+root/" + blip.getBlipId();
+      String contributors = StringUtils.join(blip.getContributors(), ", ");
+      String creator = blip.getCreator();
+
+      return "<html>"
+           + "<b><font color='#AA3F39'>(removed blip)</font></b>"
+           + blip2body(blip)
+           + "<font size='1' color='#808080'>"
+               + "<hr/>Creator: " + creator
+               + "<br/>Contributors: " + contributors
+               + "<br/>Uri: <a href='" + waveUri + "'>" + waveUri + "</a>"
+           + "</font>"
+           + "</html>";
   }
   private String modifiedBody(Blip blip)
   {
@@ -308,7 +348,9 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
       LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
   @Override
   public void onWaveletBlipRemoved(WaveletBlipRemovedEvent event) {
-      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
+      LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName());
+      removedBlip(event.getRemovedBlip());
+  }
   @Override
   public void onWaveletCreated(WaveletCreatedEvent event) {
       LOG.log(Level.INFO, "-------- START " + Thread.currentThread().getStackTrace()[1].getMethodName()); }
