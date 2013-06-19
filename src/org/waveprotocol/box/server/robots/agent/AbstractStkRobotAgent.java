@@ -74,7 +74,6 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
   {
       try
       {
-          System.out.println(">>>>> Sending email with subj: " + subject);
           Properties props = System.getProperties();
           props.put("mail.smtp.host", "smtp.example.com");
           props.put("mail.smtp.port", "587");
@@ -96,7 +95,9 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
           transport.connect("smtp.example.com", "mailbot@example.com", "s3cr3t_p4ssw0rd");
           transport.sendMessage(msg, msg.getAllRecipients());
           transport.close();
-          return msg.getMessageID();
+          String msgid = msg.getMessageID();
+          System.out.println(">>>>> Email title: " + subject + "\nid: " + msgid + "\nre: " + parentMsgId);
+          return msgid;
       } catch( Exception e ) {
           System.out.println("Sending an email:" + e);
           throw new Exception("Could not send email.");
@@ -135,8 +136,7 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
 
         if (getQuery(contents).equals(""))
         {
-            BlipContentRefs ref = blip.at(0);
-            ref.insert(newQuery + "\n");
+            blip.append("\n" + newQuery);
         }
         else
         {
@@ -171,21 +171,30 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
       String contents = blip.getContent();
       String oldQuery = "[maillist-bot?" + getQuery(contents) + "]";
       contents = contents.replace(oldQuery, "");
-      return contents.trim().replace("\n", "<br/>");
+
+      if (blip.isRoot()) // remote title from body of root blip
+      {
+          String[] lines = contents.trim().split("\n");
+          String[] rootLines = Arrays.copyOfRange(lines, 1, lines.length);
+          contents = StringUtils.join(rootLines, "\n");
+      }
+
+      return contents.replace("\n", "<br/>");
   }
   private Blip getRootBlip(Blip blip)
   {
       return blip.getWavelet().getRootBlip();
   }
-  private String getPrevMsgid(Blip blip)
+  private String getMsgid(Blip blip)
   {
-      if (blip.isRoot()) return null;
-      String msgid = query2map(getQuery(blip.getContent())).get("msgid");
-      if (msgid != null) return msgid;
+      if (blip.isRoot()) return null; // TODO bug with continue-thread blips?
+      return query2map(getQuery(blip.getContent())).get("msgid");
+  }
+  private String getParentMsgid(Blip blip)
+  {
       Blip parent = blip.getParentBlip();
-      if (parent == null) return msgid;
-      msgid = query2map(getQuery(parent.getContent())).get("msgid");
-      return msgid;
+      if (parent == null) return null;
+      return query2map(getQuery(parent.getContent())).get("msgid");
   }
   private void modifiedBlip(Blip blip)
   {
@@ -195,10 +204,23 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
 
         String subject = blip2title(blip);
         String body = null;
-        String prevMsgid = getPrevMsgid(blip);
-        if (prevMsgid == null) body = newBody(blip);
-        else body = modifiedBody(blip);
-
+        String prevMsgid = getMsgid(blip);
+        if (prevMsgid == null)
+        {
+            body = newBody(blip);
+        }
+        else
+        {
+            prevMsgid = getParentMsgid(blip);
+            if (prevMsgid == null)
+            {
+                body = newBody(blip);
+            }
+            else
+            {
+                body = modifiedBody(blip);
+            }
+        }
         Map<String, String> params = query2map(getQuery(blip.getContent()));
         String msgid = sendEmail(subject, body, prevMsgid);
         params.put("msgid", msgid);
