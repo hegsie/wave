@@ -6,6 +6,7 @@ import com.google.inject.Key;
 import com.google.inject.name.Names;
 import com.google.wave.api.Blip;
 import com.google.wave.api.BlipContentRefs;
+import com.google.wave.api.Wavelet;
 import com.google.wave.api.event.AnnotatedTextChangedEvent;
 import com.google.wave.api.event.BlipContributorsChangedEvent;
 import com.google.wave.api.event.BlipSubmittedEvent;
@@ -36,6 +37,7 @@ import java.util.logging.Logger;
 import java.lang.Thread;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.List;
 import java.util.HashMap;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -183,18 +185,38 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
   }
   private Blip getRootBlip(Blip blip)
   {
-      return blip.getWavelet().getRootBlip();
+      Wavelet wavelet = blip.getWavelet();
+      Blip rootBlip = wavelet.getRootBlip();
+      return rootBlip;
   }
   private String getMsgid(Blip blip)
   {
-      if (blip.isRoot()) return null; // TODO bug with continue-thread blips?
+      if (blip.isRoot()) return null;
       return query2map(getQuery(blip.getContent())).get("msgid");
   }
   private String getParentMsgid(Blip blip)
   {
       Blip parent = blip.getParentBlip();
-      if (parent == null) return null;
+      if (parent == null)
+      {
+          parent = getBigBrother(blip);
+          if (parent == null)
+          {
+              return null;
+          }
+      }
       return query2map(getQuery(parent.getContent())).get("msgid");
+  }
+  private Blip getBigBrother(Blip blip)
+  {
+      List<Blip> threadBlips = blip.getThread().getBlips();
+      Blip last = null;
+      for (Blip b : threadBlips)
+      {
+          if (b == blip) return last;
+          last = b;
+      }
+      return null;
   }
   private void removedBlip(Blip blip)
   {
@@ -228,26 +250,40 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
 
         String subject = blip2title(blip);
         String body = null;
-        String prevMsgid = getMsgid(blip);
-        if (prevMsgid == null)
+
+        String msgid = getMsgid(blip);
+        if (msgid != null)
         {
-            body = newBody(blip);
+            // cur already has msgid: blip was modified
+            body = modifiedBody(blip);
         }
         else
         {
-            prevMsgid = getParentMsgid(blip);
-            if (prevMsgid == null)
+            // cur has no msgid. check parent
+            msgid = getParentMsgid(blip);
+            if (msgid == null)
             {
-                body = newBody(blip);
+                if (blip.isRoot())
+                {
+                    // root blip, empty parent
+                    body = newBody(blip);
+                }
+                else
+                {
+                    // cur and parent have no msgid
+                    body = newBody(blip);
+                }
             }
             else
             {
-                body = modifiedBody(blip);
+                // parent has msgid, make new blip from it
+                body = newBody(blip);
             }
         }
+
         Map<String, String> params = query2map(getQuery(blip.getContent()));
-        String msgid = sendEmail(subject, body, prevMsgid);
-        params.put("msgid", msgid);
+        String newMsgid = sendEmail(subject, body, msgid);
+        params.put("msgid", newMsgid);
         setQuery(blip, map2query(params));
     }
     catch (Exception e)
