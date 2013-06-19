@@ -76,11 +76,19 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
   {
       try
       {
+          String default_to_address = "to_address@example.com"; // destination TO address (e.g. the address of a mailing list)
+          String smtp_host = "smtp.example.com";
+          String smtp_port = "587";
+          String smtp_user = "mailbot@example.com";
+          String smtp_password = "s3cret_p4ssw0rd";
+          String smtp_auth = "true";
+          String smtp_starttls_enable = "true";
+
           Properties props = System.getProperties();
-          props.put("mail.smtp.host", "smtp.example.com");
-          props.put("mail.smtp.port", "587");
-          props.put("mail.smtp.auth", "true");
-          props.put("mail.smtp.starttls.enable", "true");
+          props.put("mail.smtp.host", smtp_host);
+          props.put("mail.smtp.port", smtp_port);
+          props.put("mail.smtp.auth", smtp_auth);
+          props.put("mail.smtp.starttls.enable", smtp_starttls_enable);
 
           Session session = Session.getDefaultInstance(props, null);
           MimeMessage msg = new MimeMessage(session);
@@ -89,12 +97,12 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
               msg.addHeader("In-Reply-To", parentMsgId);
               msg.addHeader("References", parentMsgId);
           }
-          msg.addRecipient(Message.RecipientType.TO, new InternetAddress("to_address@example.com"));
+          msg.addRecipient(Message.RecipientType.TO, new InternetAddress(default_to_address));
           msg.setSubject(subject);
           msg.setContent(body, "text/html");
 
           Transport transport = session.getTransport("smtp");
-          transport.connect("smtp.example.com", "mailbot@example.com", "s3cr3t_p4ssw0rd");
+          transport.connect(smtp_host, smtp_user, smtp_password);
           transport.sendMessage(msg, msg.getAllRecipients());
           transport.close();
           String msgid = msg.getMessageID();
