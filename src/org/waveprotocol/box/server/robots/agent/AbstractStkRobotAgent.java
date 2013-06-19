@@ -272,15 +272,14 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
   {
       String waveUri = "wave://" + blip.getWaveId().serialise() + "~/conv+root/" + blip.getBlipId();
       String contributors = StringUtils.join(blip.getContributors(), ", ");
-      String creator = blip.getCreator();
 
       return "<html>"
            + "<b><font color='#AA3F39'>(removed blip)</font></b>"
            + blip2body(blip)
-           + "<font size='1' color='#808080'>"
-               + "<hr/>Creator: " + creator
-               + "<br/>Contributors: " + contributors
-               + "<br/>Uri: <a href='" + waveUri + "'>" + waveUri + "</a>"
+           + "<br/>"
+           + "<font size='1' color='#AA3F39'>"
+               + "Blip removed by " + contributors
+               + ", available at <a href='" + waveUri + "'>" + waveUri + "</a>"
            + "</font>"
            + "</html>";
   }
@@ -288,33 +287,29 @@ public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
   {
       String waveUri = "wave://" + blip.getWaveId().serialise() + "~/conv+root/" + blip.getBlipId();
       String contributors = StringUtils.join(blip.getContributors(), ", ");
-      String creator = blip.getCreator();
 
-      return ""
-           + "<b><font size='1' color='#AA8639'>(modified blip)</font></b>"
-           + "<br/>"
+      return "<html>"
+           + "<b><font color='#AA8639'>(modified blip)</font></b>"
            + blip2body(blip)
-           + "<hr/>"
-           + "<font size='1' color='#808080'>"
-               + "<br/>Creator: " + creator
-               + "<br/>Contributors: " + contributors
-               + "<br/>Uri: <a href='" + waveUri + "'>" + waveUri + "</a>"
-           + "</font>";
+           + "<br/>"
+           + "<font size='1' color='#AA8639'>"
+               + "Blip edited by " + contributors
+               + ", available at <a href='" + waveUri + "'>" + waveUri + "</a>"
+           + "</font>"
+           + "</html>";
   }
   private String newBody(Blip blip)
   {
       String waveUri = "wave://" + blip.getWaveId().serialise() + "~/conv+root/" + blip.getBlipId();
       String contributors = StringUtils.join(blip.getContributors(), ", ");
-      String creator = blip.getCreator();
-      return ""
+      return "<html>"
            + blip2body(blip)
-           + "<hr/>"
-           + "<font size='1' color='#808080'>"
-               + "<b><font color='#789E35'>(new blip)</font></b>"
-               + "<br/>Creator: " + creator
-               + "<br/>Contributors: " + contributors
-               + "<br/>Uri: <a href='" + waveUri + "'>" + waveUri + "</a>"
-           + "</font>";
+           + "<br/>"
+           + "<font size='1' color='#789E35'>"
+               + "Blip added by " + contributors
+               + ", available at <a href='" + waveUri + "'>" + waveUri + "</a>"
+           + "</font>"
+           + "</html>";
   }
   @Override
   public void onWaveletSelfAdded(WaveletSelfAddedEvent event) {
