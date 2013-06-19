@@ -54,6 +54,10 @@ import javax.mail.internet.MimeMessage;
 
 @SuppressWarnings("serial")
 public class AbstractStkRobotAgent extends AbstractBaseRobotAgent {
+    /* Usage:
+     * Add "maillist-bot" address to a wave.
+     * Whenever you want a blip to be sent as email, write  bot:send\n
+     * The bot will detect this, remove the magic words you just wrote, and send the email using the configuration specified in the sendEmail function. */
 
   public static final String ROBOT_URI = AGENT_PREFIX_URI + "/maillist/user";
   private static final Logger LOG = Logger.getLogger(AbstractStkRobotAgent.class.getName());
